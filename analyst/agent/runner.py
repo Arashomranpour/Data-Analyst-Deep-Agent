@@ -1,6 +1,7 @@
 """Runs the deep agent and turns raw LangGraph stream chunks into simple events for the UI."""
 
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -21,9 +22,12 @@ class AgentEvent:
     data: dict = field(default_factory=dict)
 
 
+_KEY = re.compile(r"gsk_[A-Za-z0-9]{8,}")
+
+
 def describe_error(exc: Exception) -> str:
-    """Turn provider errors into something a user can act on."""
-    text = str(exc)
+    """Turn provider errors into something a user can act on (API keys are scrubbed)."""
+    text = _KEY.sub("gsk_***", str(exc))
     if "429" in text or "rate limit" in text.lower() or type(exc).__name__ == "RateLimitError":
         scope = "daily token" if "per day" in text or "TPD" in text else "per-minute"
         return (

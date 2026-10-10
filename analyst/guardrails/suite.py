@@ -52,6 +52,14 @@ class GuardrailSuite:
         self.events = events
         self.evidence = evidence
         self.enabled = enabled
+        self._build(injection_detector, injection_threshold)
+
+    def set_detector(self, detector: str, threshold: float | None = None) -> None:
+        """Switch the prompt-injection detector at runtime (rebuilds the guards that use it)."""
+        self._build(detector, self.injection_threshold if threshold is None else threshold)
+
+    def _build(self, injection_detector: str, injection_threshold: float) -> None:
+        self.injection_detector, self.injection_threshold = injection_detector, injection_threshold
 
         def injection(on_fail: OnFailAction) -> PromptInjection:
             return PromptInjection(

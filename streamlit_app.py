@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from analyst.config import MODEL_CHOICES, get_settings
+from analyst.guardrails.classifiers import available_classifiers
 from analyst.persistence import list_sessions, load_session, save_session
 from analyst.ui import auth_views, views
 from analyst.ui.session import AnalystSession, ChatMessage
@@ -55,14 +56,18 @@ def render_sidebar(session: AnalystSession):
             st.markdown(session.store.schema_text())
 
     with sb.expander("2 · Agent", expanded=False):
+        if settings.llm_backend == "groq":
+            choice = st.radio(
+                "Model backend",
+                ["Groq (your own API key)", "Offline demo model"],
+                index=0 if session.settings.llm_backend == "groq" else 1,
+                help="The demo model is scripted: it shows the UI and guardrails without any API key.",
+            )
+            session.settings.llm_backend = "groq" if choice.startswith("Groq") else "fake"
         if session.settings.llm_backend == "fake":
-            st.info("Offline demo model (scripted). Set `LLM_BACKEND=groq` for the real agent.")
+            st.info("Offline demo model (scripted). It always runs the same revenue-by-region analysis.")
         else:
-            if not session.settings.groq_api_key:
-                key = st.text_input(
-                    "Groq API key", type="password", help="Kept in memory for this session only."
-                )
-                session.settings.groq_api_key = key or None
+            views.render_key_status(session)
             session.model_name = st.selectbox(
                 "Model", MODEL_CHOICES, index=MODEL_CHOICES.index(session.model_name)
             )
@@ -81,28 +86,44 @@ def render_sidebar(session: AnalystSession):
         st.caption(
             "🟢 Protected" if session.guards.enabled else "🔴 **UNPROTECTED** - for demonstration only"
         )
+        detectors = ["regex", "both", *[n for n in available_classifiers() if n != "heuristic"]]
+        names = {"regex": "Regex patterns (fast)", "both": "Regex + heuristic scorer (stronger)"}
+        current = session.guards.injection_detector
+        if current not in detectors:
+            detectors.append(current)
+        picked = st.selectbox(
+            "Prompt-injection detector",
+            detectors,
+            index=detectors.index(current),
+            format_func=lambda n: names.get(n, n),
+            help="The heuristic scorer also catches paraphrased attacks the regexes do not know.",
+        )
+        if picked != current:
+            session.guards.set_detector(picked)
 
-    with sb.expander("4 · Session", expanded=False):
-        save_name = st.text_input("Save as", value="my_analysis", key="save_name")
-        if st.button("💾 Save session", width="stretch", disabled=not session.store.tables):
-            folder = save_session(session, session.sessions_root, save_name)
-            st.success(f"Saved to {folder}")
-        saved = list_sessions(session.sessions_root)
-        if saved:
-            choice = st.selectbox("Saved sessions", saved, key="restore_choice")
-            if st.button("📂 Restore session", width="stretch"):
-                try:
-                    load_session(session, session.sessions_root, choice)
-                    st.rerun()
-                except (OSError, ValueError, KeyError) as exc:
-                    st.error(f"Could not restore {choice}: {exc}")
-        else:
-            st.caption("No saved sessions yet.")
+    if session.settings.enable_session_save:
+        with sb.expander("4 · Session", expanded=False):
+            save_name = st.text_input("Save as", value="my_analysis", key="save_name")
+            if st.button("💾 Save session", width="stretch", disabled=not session.store.tables):
+                folder = save_session(session, session.sessions_root, save_name)
+                st.success(f"Saved to {folder}")
+            saved = list_sessions(session.sessions_root)
+            if saved:
+                choice = st.selectbox("Saved sessions", saved, key="restore_choice")
+                if st.button("📂 Restore session", width="stretch"):
+                    try:
+                        load_session(session, session.sessions_root, choice)
+                        st.rerun()
+                    except (OSError, ValueError, KeyError) as exc:
+                        st.error(f"Could not restore {choice}: {exc}")
+            else:
+                st.caption("No saved sessions yet.")
 
     sb.divider()
     sb.markdown("**Try a prompt**")
     for label, prompt in views.EXAMPLE_PROMPTS.items():
-        if sb.button(label, key=f"ex_{label}", width="stretch", disabled=not session.store.tables):
+        runnable = bool(session.store.tables) and session.can_run
+        if sb.button(label, key=f"ex_{label}", width="stretch", disabled=not runnable):
             st.session_state.queued_prompt = prompt
             st.rerun()
     if sb.button("🧹 New conversation", width="stretch"):
@@ -178,10 +199,13 @@ with right:
 with left:
     history_box = st.container()
     approval_box = st.container()
-    ready = bool(session.store.tables)
+    ready = bool(session.store.tables) and session.can_run
     typed = st.chat_input("Ask about your data…", disabled=not ready or session.pending is not None)
 
-if not ready:
+if not session.can_run:
+    with left:
+        views.render_key_gate(session)
+elif not ready:
     with left:
         st.info("👈 Load the sample dataset or upload a CSV to begin.")
 

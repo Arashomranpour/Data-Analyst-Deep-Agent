@@ -10,3 +10,4 @@ plotly>=5.24
 sqlglot>=25
 pydantic-settings>=2.4
 markdown>=3.6
+scipy>=1.11

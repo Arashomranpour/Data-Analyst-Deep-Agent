@@ -305,3 +305,48 @@ def progress_html(progress: RunProgress, session: AnalystSession) -> str:
 
 def render_progress(progress: RunProgress, session: AnalystSession) -> None:
     st.markdown(progress_html(progress, session), unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------ bring your own API key
+def render_key_status(session: AnalystSession) -> None:
+    """Sidebar: whether a key is set (only the last 4 characters are ever shown)."""
+    key = session.settings.groq_api_key
+    if not key:
+        st.warning("No Groq API key yet. Add yours in the main panel.", icon="🔑")
+        return
+    st.caption(f"🔑 Using your key ending …{key[-4:]} (kept in this browser session only)")
+    if st.button("Forget my key", width="stretch"):
+        session.settings.groq_api_key = None
+        session.runner = None
+        st.rerun()
+
+
+def render_key_gate(session: AnalystSession) -> None:
+    """Main panel shown until the visitor brings a Groq key (or chooses the offline demo)."""
+    with st.container(border=True):
+        st.subheader("🔑 Bring your own Groq API key")
+        st.markdown(
+            "This app does not ship with an API key, so your analyses run on **your** Groq quota. "
+            "Get a free key at [console.groq.com/keys](https://console.groq.com/keys). The key lives only in "
+            "this browser session's memory: it is never written to disk, never saved with a session and never "
+            "shown to anyone else."
+        )
+        key = st.text_input("Groq API key", type="password", placeholder="gsk_...", key="groq_key_input")
+        use, demo = st.columns(2)
+        if use.button("Use this key", type="primary", width="stretch"):
+            cleaned = (key or "").strip().strip("\"'")
+            if not cleaned:
+                st.error("Paste your key first.")
+            else:
+                session.settings.groq_api_key = cleaned
+                if not cleaned.startswith("gsk_"):
+                    st.session_state.key_warning = (
+                        "That key does not start with 'gsk_', so Groq may reject it."
+                    )
+                st.session_state.pop("groq_key_input", None)
+                st.rerun()
+        if demo.button("Try the offline demo instead", width="stretch"):
+            session.settings.llm_backend = "fake"
+            st.rerun()
+        if st.session_state.get("key_warning"):
+            st.warning(st.session_state.pop("key_warning"))

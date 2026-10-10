@@ -24,16 +24,27 @@ STAGES: tuple[Stage, ...] = (
     Stage("plan", "Plan", "🗺️"),
     Stage("profile", "Profile data", "🔎"),
     Stage("sql", "SQL analysis", "🧮"),
+    Stage("stats", "Statistics", "🧪"),
     Stage("chart", "Visualise", "📊"),
     Stage("review", "Critic review", "🕵️"),
     Stage("report", "Write report", "📝"),
     Stage("output", "Output guardrail & answer", "✅"),
 )
-_BY_AGENT = {"data-profiler": "profile", "sql-analyst": "sql", "visualizer": "chart", "critic": "review"}
+_BY_AGENT = {
+    "data-profiler": "profile",
+    "sql-analyst": "sql",
+    "statistician": "stats",
+    "visualizer": "chart",
+    "critic": "review",
+}
 _BY_TOOL = {
     "list_tables": "profile",
     "describe_table": "profile",
     "run_sql": "sql",
+    "correlate": "stats",
+    "compare_groups": "stats",
+    "find_outliers": "stats",
+    "forecast": "stats",
     "make_chart": "chart",
     "write_file": "report",
     "edit_file": "report",

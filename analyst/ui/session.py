@@ -31,6 +31,8 @@ class ChatMessage:
 class AnalystSession:
     def __init__(self, settings: Settings, user: str | None = None):
         self.settings = settings
+        if not settings.allow_server_key:
+            settings.groq_api_key = None  # bring your own key: never spend the host's quota
         self.user = user  # signed-in username, or None when auth is off
         self.store = DataStore(settings.max_rows, settings.query_timeout_s)
         self.events = EventLog()
@@ -68,6 +70,11 @@ class AnalystSession:
         base = Path(self.settings.sessions_dir)
         return base / self.user if self.user else base
 
+    @property
+    def can_run(self) -> bool:
+        """The agent can start: offline demo model, or a Groq key is available."""
+        return self.settings.llm_backend == "fake" or bool(self.settings.groq_api_key)
+
     # ---- data ----------------------------------------------------------
     def load_sample(self) -> str:
         table = self.store.load_dataframe("sample_sales", sample_sales_df())
@@ -80,7 +87,7 @@ class AnalystSession:
     # ---- agent ---------------------------------------------------------
     def ensure_runner(self) -> AgentRunner:
         """(Re)build the agent when a setting that is baked into the graph changes."""
-        key = (self.model_name, self.require_approval, self.settings.groq_api_key)
+        key = (self.model_name, self.require_approval, self.settings.groq_api_key, self.settings.llm_backend)
         if self.runner is None or key != self._runner_key:
             agent = build_agent(
                 model=build_model(self.settings, self.model_name),

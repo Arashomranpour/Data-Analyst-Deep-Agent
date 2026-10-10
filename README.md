@@ -10,7 +10,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Groq](https://img.shields.io/badge/LLM-Groq-F55036)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-130_passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-158_passing-brightgreen)
 
 </div>
 
@@ -25,7 +25,9 @@ Agents that touch real data fail in specific, predictable ways: they get **promp
 | Capability | How it is built |
 |---|---|
 | 🗺️ **Plans before acting** | LangChain **deepagents**: `write_todos` planning tool, live progress in the UI |
-| 🧑‍🤝‍🧑 **A team, not one prompt** | Subagents with isolated context: `data-profiler`, `sql-analyst`, `visualizer`, `critic` |
+| 🧑‍🤝‍🧑 **A team, not one prompt** | Subagents with isolated context: `data-profiler`, `sql-analyst`, `statistician`, `visualizer`, `critic` |
+| 🧪 **Statistics** | Safe, structured tools the `statistician` can call on any query result: correlations (Pearson/Spearman), group-difference tests (t-test, ANOVA + non-parametric), outliers (IQR / z-score) and a linear-trend forecast with a 95% interval. No model-written code runs |
+| 🔑 **Bring your own key** | Visitors enter their own Groq key (memory only, never saved); the host key is never used unless `ALLOW_SERVER_KEY=true`. An offline demo model works without any key |
 | 📝 **Virtual file system** | The agent drafts `/report.md`, shown and downloadable in the UI |
 | ✋ **Human in the loop** | Optional approval gate on every SQL query: approve, edit or reject |
 | 🛡️ **Guardrails AI** | 6 custom validators on 4 checkpoints (below) |
@@ -128,7 +130,9 @@ A scripted model walks through the real agent graph (plan → SQL → chart → 
 | `MAX_ROWS` | `200` | Hard cap on rows per query |
 | `QUERY_TIMEOUT_S` | `8` | Per-query wall-clock limit |
 | `MAX_UPLOAD_MB` | `25` | CSV upload limit |
-| `INJECTION_DETECTOR` | `regex` | `regex`, `both` (regex + offline heuristic scorer) or a registered classifier name |
+| `ALLOW_SERVER_KEY` | `false` | `true` lets users run on the server's `GROQ_API_KEY` (default: everyone brings their own) |
+| `ENABLE_SESSION_SAVE` | `true` | `false` hides save/restore (use on shared public demos) |
+| `INJECTION_DETECTOR` | `both` | `regex`, `both` (regex + offline heuristic scorer, default) or a registered classifier name |
 | `INJECTION_THRESHOLD` | `0.7` | Score at which a classifier verdict counts as an injection |
 | `SESSIONS_DIR` | `.sessions` | Where saved sessions are written (`<dir>/<username>/` when auth is on) |
 | `AUTH_ENABLED` | `false` | Require sign-in |
@@ -149,6 +153,7 @@ analyst/
 │   ├── suite.py            # Which guard runs where + event logging
 │   ├── numbers.py          # Number parsing and grounding
 │   └── events.py           # Thread-safe decision log
+├── tools/stats.py          # correlate / compare_groups / find_outliers / forecast
 ├── export/report.py        # Markdown / HTML report builders
 ├── auth/users.py           # Accounts, roles, hashing, lockout
 ├── persistence.py          # Save / restore a session (plain JSON, no pickle)
@@ -159,7 +164,7 @@ analyst/
 │   ├── runner.py           # Streams LangGraph chunks into clean UI events
 │   └── fake_model.py       # Scripted model for offline use / tests
 └── ui/                     # Session state and Streamlit views
-tests/                      # 130 tests: validators, store, tools, agent graph, UI
+tests/                      # 158 tests: validators, store, tools, agent graph, UI
 ```
 
 ## 🧪 Testing
@@ -169,14 +174,14 @@ pytest -q
 ruff check .
 ```
 
-130 tests, all offline, ~25 s. They include red-team cases (injection, destructive SQL, PII), the control experiment (the same attack **succeeds** with guardrails off), human-approval flows against the real deep-agent graph, and headless Streamlit runs of the whole UI.
+158 tests, all offline, ~25 s. They include red-team cases (injection, destructive SQL, PII), the control experiment (the same attack **succeeds** with guardrails off), human-approval flows against the real deep-agent graph, and headless Streamlit runs of the whole UI.
 
 ## 🔍 Design notes & honest limits
 
 - **Why custom validators?** Hub validators need a Guardrails Hub account/token and some pull in ML models. These are small, deterministic, dependency-light and fully unit-tested - and they use the standard `Validator` / `Guard` / on-fail machinery, so Hub validators can be added alongside.
 - **No `exec`**: charts come from a structured tool, not model-written code. That removes the largest attack surface for data agents.
 - **`GroundedNumbers` is a heuristic.** It compares figures against everything the model saw (with rounding, `%` and `K/M/B` handling), so a derived figure such as a share the model computed itself can be flagged. It warns rather than blocks for that reason.
-- **Prompt-injection detection is pattern-based by default** (fast, explainable, zero latency). Set `INJECTION_DETECTOR=both` to add an offline weighted-signal scorer that catches paraphrases the regexes miss; it is still heuristic, not a trained model. Any better detector (for example a model-based one) plugs in with `register_classifier(name, factory)` in `analyst/guardrails/classifiers.py` without touching the validator.
+- **Prompt-injection detection uses regexes plus an offline heuristic scorer by default** (fast, explainable, zero latency). The scorer catches paraphrases the regexes miss (`INJECTION_DETECTOR=regex` turns it off); it is still heuristic, not a trained model. Any better detector (for example a model-based one) plugs in with `register_classifier(name, factory)` in `analyst/guardrails/classifiers.py` without touching the validator.
 - **Sessions restore what you see, not the agent's memory.** The LangGraph checkpoint is not saved, so a restored conversation continues in a fresh thread.
 - **Auth is for a trusted network, not the open internet.** Accounts are local (no email reset, no 2FA, no OIDC) and Streamlit serves plain HTTP; put it behind HTTPS (reverse proxy) and mount `.data/` and `.sessions/` as volumes in Docker. Users share one process and one LLM key; only their saved sessions are private.
 - **No built-in PDF export.** The HTML report is print-styled; use *Print -> Save as PDF* (charts load plotly.js from a CDN).

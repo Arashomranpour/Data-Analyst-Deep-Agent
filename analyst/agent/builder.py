@@ -31,7 +31,7 @@ def build_agent(
     require_approval: bool = False,
     checkpointer: BaseCheckpointSaver | None = None,
 ):
-    """A LangChain deep agent: planning (write_todos), a virtual file system, and four
+    """A LangChain deep agent: planning (write_todos), a virtual file system, and five
     specialised subagents that work in isolated context windows."""
     from deepagents import create_deep_agent
     from langchain.agents.middleware import TodoListMiddleware
@@ -49,6 +49,12 @@ def build_agent(
             "description": "Answers one focused analytical question with SQL and returns exact numbers with query_ids.",
             "system_prompt": prompts.SQL_ANALYST,
             "tools": [toolkit.list_tables, toolkit.describe_table, toolkit.run_sql],
+        },
+        {
+            "name": "statistician",
+            "description": "Runs statistics on a query_id: correlations, group-difference tests, outliers, trend forecast.",
+            "system_prompt": prompts.STATISTICIAN,
+            "tools": [toolkit.list_tables, toolkit.describe_table, *toolkit.statistics],
         },
         {
             "name": "visualizer",
