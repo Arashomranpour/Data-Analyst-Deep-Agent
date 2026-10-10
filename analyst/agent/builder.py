@@ -19,7 +19,7 @@ def build_model(settings: Settings, model_name: str | None = None) -> BaseChatMo
         model=model_name or settings.groq_model,
         api_key=settings.groq_api_key,
         temperature=0,
-        max_retries=2,  # short back-off for per-minute limits; daily limits fail fast (see runner)
+        max_retries=5,  # rides out per-minute limits (the client honours retry-after); see runner
         timeout=90,
     )
 

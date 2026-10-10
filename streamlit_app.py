@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from analyst.config import MODEL_CHOICES, get_settings
+from analyst.persistence import list_sessions, load_session, save_session
 from analyst.ui import views
 from analyst.ui.session import AnalystSession, ChatMessage
 
@@ -15,10 +16,16 @@ def get_session() -> AnalystSession:
 
 
 # ----------------------------------------------------------------------------- sidebar
-def render_sidebar(session: AnalystSession) -> None:
+def render_sidebar(session: AnalystSession):
+    """Draws the sidebar; returns the placeholder the live progress panel is streamed into."""
     sb = st.sidebar
     sb.title("🧠 Data Analyst Deep Agent")
     sb.caption("LangChain **deepagents** · **Guardrails AI** · Groq")
+
+    with sb.expander("⚡ Live progress", expanded=True):
+        progress_ph = st.empty()
+        with progress_ph.container():
+            views.render_progress(session.progress, session)
 
     with sb.expander("1 · Data", expanded=True):
         if st.button("📦 Load sample sales data", width="stretch"):
@@ -69,6 +76,23 @@ def render_sidebar(session: AnalystSession) -> None:
             "🟢 Protected" if session.guards.enabled else "🔴 **UNPROTECTED** - for demonstration only"
         )
 
+    with sb.expander("4 · Session", expanded=False):
+        save_name = st.text_input("Save as", value="my_analysis", key="save_name")
+        if st.button("💾 Save session", width="stretch", disabled=not session.store.tables):
+            folder = save_session(session, session.settings.sessions_dir, save_name)
+            st.success(f"Saved to {folder}")
+        saved = list_sessions(session.settings.sessions_dir)
+        if saved:
+            choice = st.selectbox("Saved sessions", saved, key="restore_choice")
+            if st.button("📂 Restore session", width="stretch"):
+                try:
+                    load_session(session, session.settings.sessions_dir, choice)
+                    st.rerun()
+                except (OSError, ValueError, KeyError) as exc:
+                    st.error(f"Could not restore {choice}: {exc}")
+        else:
+            st.caption("No saved sessions yet.")
+
     sb.divider()
     sb.markdown("**Try a prompt**")
     for label, prompt in views.EXAMPLE_PROMPTS.items():
@@ -78,14 +102,18 @@ def render_sidebar(session: AnalystSession) -> None:
     if sb.button("🧹 New conversation", width="stretch"):
         session.reset_conversation()
         st.rerun()
+    return progress_ph
 
 
 # ------------------------------------------------------------------------------- run
-def stream_events(session: AnalystSession, events, plan_ph, trace_ph) -> None:
+def stream_events(session: AnalystSession, events, plan_ph, trace_ph, progress_ph) -> None:
     """Consume agent events, updating the live status box and the right-hand panels."""
     status = st.status("🧠 The team is working…", expanded=True)
     for event in events:
         session.record(event)
+        session.progress.on_event(event)
+        with progress_ph.container():
+            views.render_progress(session.progress, session)
         if event.kind == "todos":
             with plan_ph.container():
                 views.render_plan(session.todos)
@@ -120,7 +148,7 @@ def render_history(session: AnalystSession) -> None:
 
 # ------------------------------------------------------------------------------- page
 session = get_session()
-render_sidebar(session)
+progress_ph = render_sidebar(session)
 
 st.title("🧠 Data Analyst Deep Agent")
 st.caption(
@@ -165,12 +193,14 @@ if (prompt or decision) and ready:
                 session.trace.clear()
                 with st.chat_message("user"):
                     st.markdown(prompt)
+                session.progress.begin()
                 events = runner.ask(prompt, session.thread_id)
             else:
                 session.pending = None
+                session.progress.resume()
                 events = runner.resume(decision, session.thread_id)
             with st.chat_message("assistant"):
-                stream_events(session, events, plan_ph, trace_ph)
+                stream_events(session, events, plan_ph, trace_ph, progress_ph)
         except RuntimeError as exc:
             session.messages.append(ChatMessage("assistant", f"⚠️ {exc}", blocked=True))
     st.rerun()

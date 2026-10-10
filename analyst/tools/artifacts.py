@@ -54,6 +54,12 @@ class Artifacts:
         with self._lock:
             return list(self._charts)
 
+    def restore(self, queries: list[QueryRecord], charts: list[ChartRecord]) -> None:
+        """Replace the contents with previously saved records, keeping their ids."""
+        with self._lock:
+            self._queries = {q.id: q for q in queries}
+            self._charts = list(charts)
+
     def clear(self) -> None:
         with self._lock:
             self._queries.clear()

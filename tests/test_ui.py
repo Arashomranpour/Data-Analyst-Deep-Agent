@@ -57,3 +57,34 @@ def test_guardrails_toggle_changes_state(app):
     toggle = next(t for t in app.sidebar.toggle if "Guardrails" in t.label)
     toggle.set_value(False).run()
     assert any("UNPROTECTED" in c.value for c in app.sidebar.caption)
+
+
+def test_exports_are_offered_after_a_run(app):
+    button(app, "Load sample").click().run()
+    app.chat_input[0].set_value("Which region has the highest revenue?").run()
+    assert not app.exception
+    labels = [b.proto.label for b in app.get("download_button")]
+    assert any(".md" in label for label in labels) and any(".html" in label for label in labels)
+    assert any("Audit log (.json)" in label for label in labels)
+
+
+def test_session_can_be_saved_and_restored_from_the_sidebar(app, tmp_path):
+    app.session_state.session.settings.sessions_dir = str(tmp_path)
+    button(app, "Load sample").click().run()
+    app.chat_input[0].set_value("Which region has the highest revenue?").run()
+    button(app, "Save session").click().run()
+    assert not app.exception and (tmp_path / "my_analysis" / "session.json").is_file()
+
+    button(app, "New conversation").click().run()
+    assert not messages(app)
+    button(app, "Restore session").click().run()
+    assert not app.exception
+    assert any("highest revenue" in t for t in messages(app))
+
+
+def test_live_progress_panel_reports_a_finished_run(app):
+    button(app, "Load sample").click().run()
+    app.chat_input[0].set_value("Which region has the highest revenue?").run()
+    assert not app.exception
+    panel = next(m.value for m in app.sidebar.markdown if "lp-pill" in m.value)
+    assert "Done" in panel and "SQL analysis" in panel and "skipped" in panel

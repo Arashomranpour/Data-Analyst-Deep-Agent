@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 MODEL_CHOICES = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
-    "llama-3.3-70b-versatile",
 ]
 
 
@@ -24,6 +23,10 @@ class Settings(BaseSettings):
     query_timeout_s: float = 8.0
     max_upload_mb: int = 25
     recursion_limit: int = 80  # LangGraph steps per run
+
+    injection_detector: str = "regex"  # regex | both (regex + heuristic) | any registered classifier
+    injection_threshold: float = 0.7  # score at which a classifier verdict counts as an injection
+    sessions_dir: str = ".sessions"  # where saved sessions are written
 
 
 @lru_cache

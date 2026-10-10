@@ -16,6 +16,7 @@ from analyst.guardrails.numbers import Evidence
 from analyst.guardrails.suite import GuardrailSuite
 from analyst.tools.artifacts import Artifacts
 from analyst.tools.toolkit import build_toolkit
+from analyst.ui.progress import RunProgress
 
 
 @dataclass
@@ -33,7 +34,13 @@ class AnalystSession:
         self.events = EventLog()
         self.evidence = Evidence()
         self.artifacts = Artifacts()
-        self.guards = GuardrailSuite(self.events, self.evidence, enabled=True)
+        self.guards = GuardrailSuite(
+            self.events,
+            self.evidence,
+            enabled=True,
+            injection_detector=settings.injection_detector,
+            injection_threshold=settings.injection_threshold,
+        )
         self.toolkit = build_toolkit(self.store, self.guards, self.evidence, self.artifacts, settings)
         self.checkpointer = MemorySaver()
 
@@ -45,6 +52,7 @@ class AnalystSession:
         self.pending: AgentEvent | None = None  # a SQL call waiting for human approval
         self.loaded_files: set[str] = set()
         self.tokens = 0
+        self.progress = RunProgress()
 
         self.model_name = settings.groq_model
         self.require_approval = False
@@ -82,6 +90,7 @@ class AnalystSession:
         self.todos = []
         self.files = {}
         self.pending = None
+        self.progress = RunProgress()
         self.artifacts.clear()
         self.evidence.clear()
         self.events.clear()

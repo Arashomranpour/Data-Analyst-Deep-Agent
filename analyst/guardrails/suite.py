@@ -41,18 +41,30 @@ class OutputReport:
 
 
 class GuardrailSuite:
-    def __init__(self, events: EventLog, evidence: Evidence, enabled: bool = True):
+    def __init__(
+        self,
+        events: EventLog,
+        evidence: Evidence,
+        enabled: bool = True,
+        injection_detector: str = "regex",
+        injection_threshold: float = 0.7,
+    ):
         self.events = events
         self.evidence = evidence
         self.enabled = enabled
 
-        self._input = Guard(name="input").use(PromptInjection(on_fail=OnFailAction.EXCEPTION))
+        def injection(on_fail: OnFailAction) -> PromptInjection:
+            return PromptInjection(
+                detector=injection_detector, threshold=injection_threshold, on_fail=on_fail
+            )
+
+        self._input = Guard(name="input").use(injection(OnFailAction.EXCEPTION))
         self._sql = Guard(name="sql").use(
             SafeSQL(on_fail=OnFailAction.EXCEPTION),
             EnforceLimit(on_fail=OnFailAction.FIX),
         )
         self._tool_output = Guard(name="tool_output").use(
-            PromptInjection(on_fail=OnFailAction.FIX),
+            injection(OnFailAction.FIX),
             PIIRedactor(on_fail=OnFailAction.FIX),
         )
         self._output = Guard(name="output").use(

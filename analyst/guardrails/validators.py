@@ -12,6 +12,7 @@ from guardrails.validator_base import FailResult, PassResult
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
+from analyst.guardrails.classifiers import get_classifier
 from analyst.guardrails.numbers import ungrounded_numbers
 
 # --------------------------------------------------------------------------- injection
@@ -37,17 +38,55 @@ def find_injection(text: str) -> list[str]:
     return [m.group(0).strip() for m in _INJECTION_RE.finditer(text)]
 
 
+_SEGMENT_SPLIT_RE = re.compile(r"([|\n])")
+
+
+def scan_injection(text: str, detector: str = "regex", threshold: float = 0.7) -> tuple[list[str], str]:
+    """Return (reasons, fixed_text). `detector` is `regex`, `both` (regex + heuristic) or the name of
+    any classifier registered in `analyst.guardrails.classifiers`."""
+    reasons = [f"'{hit[:60]}'" for hit in find_injection(text)]
+    fixed = _INJECTION_SEGMENT_RE.sub(INJECTION_PLACEHOLDER, text) if reasons else text
+    if detector == "regex":
+        return reasons, fixed
+
+    classifier = get_classifier("heuristic" if detector == "both" else detector)
+    # Score each table cell / line on its own, so one poisoned cell is removed and its neighbours kept.
+    parts = _SEGMENT_SPLIT_RE.split(fixed)
+    flagged = 0
+    for i in range(0, len(parts), 2):
+        if parts[i] == INJECTION_PLACEHOLDER or not parts[i].strip():
+            continue
+        verdict = classifier.analyse(parts[i])
+        if verdict.score >= threshold:
+            flagged += 1
+            reasons.append(f"{detector} score {verdict.score:.2f} ({', '.join(verdict.signals)})")
+            parts[i] = INJECTION_PLACEHOLDER
+    if flagged == 0:  # the whole text may only look hostile when read together
+        verdict = classifier.analyse(fixed)
+        if verdict.score >= threshold:
+            reasons.append(f"{detector} score {verdict.score:.2f} ({', '.join(verdict.signals)})")
+            parts = [INJECTION_PLACEHOLDER]
+    return reasons, "".join(parts)
+
+
 @register_validator(name="analyst/prompt_injection", data_type="string")
 class PromptInjection(Validator):
-    """Detects instruction-hijacking text. FIX replaces the whole offending cell/line."""
+    """Detects instruction-hijacking text. FIX replaces the whole offending cell/line.
+
+    `detector` picks the strategy: `regex` (default, fast, explainable), `both` (adds the offline
+    heuristic scorer) or any registered classifier name; `threshold` is the score that counts."""
+
+    def __init__(self, detector: str = "regex", threshold: float = 0.7, on_fail=None):
+        super().__init__(on_fail=on_fail, detector=detector, threshold=threshold)
+        self._detector = detector
+        self._threshold = threshold
 
     def _validate(self, value, metadata=None):
-        hits = find_injection(value)
-        if not hits:
+        reasons, fixed = scan_injection(value, self._detector, self._threshold)
+        if not reasons:
             return PassResult()
-        fixed = _INJECTION_SEGMENT_RE.sub(INJECTION_PLACEHOLDER, value)
         return FailResult(
-            error_message=f"Possible prompt injection ({len(hits)} match): '{hits[0][:60]}'",
+            error_message=f"Possible prompt injection ({len(reasons)} match): {reasons[0]}",
             fix_value=fixed,
         )
 

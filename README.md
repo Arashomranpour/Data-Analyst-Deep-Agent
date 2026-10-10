@@ -10,7 +10,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Groq](https://img.shields.io/badge/LLM-Groq-F55036)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-71_passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-110_passing-brightgreen)
 
 </div>
 
@@ -31,6 +31,10 @@ Agents that touch real data fail in specific, predictable ways: they get **promp
 | 🛡️ **Guardrails AI** | 6 custom validators on 4 checkpoints (below) |
 | 🔒 **Defence in depth** | The database itself is read-only (SQLite authorizer), row-capped and time-limited - even if a guard were bypassed |
 | 📊 **Charts** | Safe, structured `make_chart` tool (no arbitrary code execution) |
+| 📄 **Export** | Download the report as Markdown or a self-contained HTML page (print to PDF), with charts, the SQL that was run and a guardrail summary |
+| 💾 **Sessions** | Save an analysis to disk and restore it later: data, chat, plan, report, queries, charts, guardrail log |
+| ⚡ **Live progress** | Sidebar stepper updates as the agent works: current step, per-step time and tool calls, plan progress, tokens and guardrail actions |
+| 🧾 **Audit log** | Download every guardrail decision as JSON (with per-validator counts) or CSV |
 | 💸 **Cost-aware** | Token usage per run; friendly handling of provider rate limits |
 
 ## 🛡️ The guardrail pipeline
@@ -123,6 +127,9 @@ A scripted model walks through the real agent graph (plan → SQL → chart → 
 | `MAX_ROWS` | `200` | Hard cap on rows per query |
 | `QUERY_TIMEOUT_S` | `8` | Per-query wall-clock limit |
 | `MAX_UPLOAD_MB` | `25` | CSV upload limit |
+| `INJECTION_DETECTOR` | `regex` | `regex`, `both` (regex + offline heuristic scorer) or a registered classifier name |
+| `INJECTION_THRESHOLD` | `0.7` | Score at which a classifier verdict counts as an injection |
+| `SESSIONS_DIR` | `.sessions` | Where saved sessions are written |
 
 ## 📁 Project structure
 
@@ -133,9 +140,12 @@ analyst/
 ├── data/                   # DataStore (read-only SQLite) + booby-trapped sample dataset
 ├── guardrails/
 │   ├── validators.py       # Custom Guardrails AI validators
+│   ├── classifiers.py      # Pluggable injection classifiers (heuristic scorer + registry)
 │   ├── suite.py            # Which guard runs where + event logging
 │   ├── numbers.py          # Number parsing and grounding
 │   └── events.py           # Thread-safe decision log
+├── export/report.py        # Markdown / HTML report builders
+├── persistence.py          # Save / restore a session (plain JSON, no pickle)
 ├── tools/                  # list_tables · describe_table · run_sql · make_chart (+ artifacts)
 ├── agent/
 │   ├── builder.py          # create_deep_agent: planner + 4 subagents (+ HITL)
@@ -143,7 +153,7 @@ analyst/
 │   ├── runner.py           # Streams LangGraph chunks into clean UI events
 │   └── fake_model.py       # Scripted model for offline use / tests
 └── ui/                     # Session state and Streamlit views
-tests/                      # 71 tests: validators, store, tools, agent graph, UI
+tests/                      # 110 tests: validators, store, tools, agent graph, UI
 ```
 
 ## 🧪 Testing
@@ -153,14 +163,16 @@ pytest -q
 ruff check .
 ```
 
-71 tests, all offline, ~15 s. They include red-team cases (injection, destructive SQL, PII), the control experiment (the same attack **succeeds** with guardrails off), human-approval flows against the real deep-agent graph, and headless Streamlit runs of the whole UI.
+110 tests, all offline, ~25 s. They include red-team cases (injection, destructive SQL, PII), the control experiment (the same attack **succeeds** with guardrails off), human-approval flows against the real deep-agent graph, and headless Streamlit runs of the whole UI.
 
 ## 🔍 Design notes & honest limits
 
 - **Why custom validators?** Hub validators need a Guardrails Hub account/token and some pull in ML models. These are small, deterministic, dependency-light and fully unit-tested - and they use the standard `Validator` / `Guard` / on-fail machinery, so Hub validators can be added alongside.
 - **No `exec`**: charts come from a structured tool, not model-written code. That removes the largest attack surface for data agents.
 - **`GroundedNumbers` is a heuristic.** It compares figures against everything the model saw (with rounding, `%` and `K/M/B` handling), so a derived figure such as a share the model computed itself can be flagged. It warns rather than blocks for that reason.
-- **Prompt-injection detection is pattern-based** (fast, explainable, zero latency). It is a strong first line against common attacks but not a substitute for model-based classifiers; the validator interface makes swapping one in straightforward.
+- **Prompt-injection detection is pattern-based by default** (fast, explainable, zero latency). Set `INJECTION_DETECTOR=both` to add an offline weighted-signal scorer that catches paraphrases the regexes miss; it is still heuristic, not a trained model. Any better detector (for example a model-based one) plugs in with `register_classifier(name, factory)` in `analyst/guardrails/classifiers.py` without touching the validator.
+- **Sessions restore what you see, not the agent's memory.** The LangGraph checkpoint is not saved, so a restored conversation continues in a fresh thread.
+- **No built-in PDF export.** The HTML report is print-styled; use *Print -> Save as PDF* (charts load plotly.js from a CDN).
 - **Data stays in memory** for the session; there is no persistence layer or multi-user auth - this is a single-user analysis workbench.
 - Free-tier LLM quotas are the practical bottleneck (see above).
 

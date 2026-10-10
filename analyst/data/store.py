@@ -68,6 +68,15 @@ class DataStore:
         self.frames[table] = df
         return table
 
+    def clear(self) -> None:
+        """Drop every table (used when a saved session replaces the current data)."""
+        with self._lock:
+            self._conn.set_authorizer(None)
+            for table in self.frames:
+                self._conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+            self._conn.set_authorizer(_authorizer)
+        self.frames.clear()
+
     # ---- schema --------------------------------------------------------
     @property
     def tables(self) -> list[str]:
