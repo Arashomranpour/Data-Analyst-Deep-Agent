@@ -8,3 +8,4 @@ __pycache__/
 .sessions/
 graphify-out/cache/
 .data/
+.claude/
