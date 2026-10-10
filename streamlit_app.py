@@ -3,15 +3,21 @@ import streamlit as st
 
 from analyst.config import MODEL_CHOICES, get_settings
 from analyst.persistence import list_sessions, load_session, save_session
-from analyst.ui import views
+from analyst.ui import auth_views, views
 from analyst.ui.session import AnalystSession, ChatMessage
 
 st.set_page_config(page_title="Data Analyst Deep Agent", page_icon="🧠", layout="wide")
 
+# ----------------------------------------------------------------------------- sign in
+settings = get_settings()
+user_store = auth_views.store_for(settings) if settings.auth_enabled else None
+user = auth_views.gate(user_store, settings) if user_store else None  # stops here until signed in
+
 
 def get_session() -> AnalystSession:
-    if "session" not in st.session_state:
-        st.session_state.session = AnalystSession(get_settings().model_copy())
+    existing = st.session_state.get("session")
+    if existing is None or existing.user != (user.username if user else None):
+        st.session_state.session = AnalystSession(settings.model_copy(), user.username if user else None)
     return st.session_state.session
 
 
@@ -79,14 +85,14 @@ def render_sidebar(session: AnalystSession):
     with sb.expander("4 · Session", expanded=False):
         save_name = st.text_input("Save as", value="my_analysis", key="save_name")
         if st.button("💾 Save session", width="stretch", disabled=not session.store.tables):
-            folder = save_session(session, session.settings.sessions_dir, save_name)
+            folder = save_session(session, session.sessions_root, save_name)
             st.success(f"Saved to {folder}")
-        saved = list_sessions(session.settings.sessions_dir)
+        saved = list_sessions(session.sessions_root)
         if saved:
             choice = st.selectbox("Saved sessions", saved, key="restore_choice")
             if st.button("📂 Restore session", width="stretch"):
                 try:
-                    load_session(session, session.settings.sessions_dir, choice)
+                    load_session(session, session.sessions_root, choice)
                     st.rerun()
                 except (OSError, ValueError, KeyError) as exc:
                     st.error(f"Could not restore {choice}: {exc}")
@@ -149,6 +155,8 @@ def render_history(session: AnalystSession) -> None:
 # ------------------------------------------------------------------------------- page
 session = get_session()
 progress_ph = render_sidebar(session)
+if user:
+    auth_views.render_account(user)
 
 st.title("🧠 Data Analyst Deep Agent")
 st.caption(
@@ -158,9 +166,11 @@ st.caption(
 
 left, right = st.columns([5, 4], gap="large")
 with right:
-    tab_plan, tab_data, tab_report, tab_guard = st.tabs(
-        ["🗺️ Plan & trace", "📊 Data & charts", "📄 Report", "🛡️ Guardrails"]
-    )
+    tab_names = ["🗺️ Plan & trace", "📊 Data & charts", "📄 Report", "🛡️ Guardrails"]
+    if user and user.is_admin:
+        tab_names.append("👑 Admin")
+    tabs = st.tabs(tab_names)
+    tab_plan, tab_data, tab_report, tab_guard = tabs[:4]
     with tab_plan:
         plan_box, trace_box = st.container(), st.container()
         plan_ph, trace_ph = plan_box.empty(), trace_box.empty()
@@ -222,3 +232,6 @@ with tab_guard:
     if attack and ready:
         st.session_state.queued_prompt = attack
         st.rerun()
+if user and user.is_admin:
+    with tabs[4]:
+        auth_views.render_admin(user_store, user)

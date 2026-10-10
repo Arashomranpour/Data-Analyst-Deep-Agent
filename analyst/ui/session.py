@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
 from langgraph.checkpoint.memory import MemorySaver
@@ -28,8 +29,9 @@ class ChatMessage:
 
 
 class AnalystSession:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, user: str | None = None):
         self.settings = settings
+        self.user = user  # signed-in username, or None when auth is off
         self.store = DataStore(settings.max_rows, settings.query_timeout_s)
         self.events = EventLog()
         self.evidence = Evidence()
@@ -58,6 +60,13 @@ class AnalystSession:
         self.require_approval = False
         self.runner: AgentRunner | None = None
         self._runner_key: tuple | None = None
+
+    @property
+    def sessions_root(self) -> Path:
+        """Where this user's saved sessions live. Usernames are validated on creation, so this
+        cannot point outside `sessions_dir`."""
+        base = Path(self.settings.sessions_dir)
+        return base / self.user if self.user else base
 
     # ---- data ----------------------------------------------------------
     def load_sample(self) -> str:

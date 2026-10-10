@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     injection_threshold: float = 0.7  # score at which a classifier verdict counts as an injection
     sessions_dir: str = ".sessions"  # where saved sessions are written
 
+    auth_enabled: bool = False  # require sign-in; each user gets private saved sessions
+    users_db: str = ".data/users.db"  # SQLite file holding accounts (hashed passwords)
+    allow_signup: bool = True  # let visitors create their own (analyst) account
+    admin_username: str | None = None  # optional bootstrap admin, created if the DB is empty
+    admin_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

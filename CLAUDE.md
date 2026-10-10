@@ -8,13 +8,13 @@ Single-user workbench; data lives in memory for the session.
 ## Commands
 - Run (offline, no key): `LLM_BACKEND=fake streamlit run streamlit_app.py` (PowerShell: `$env:LLM_BACKEND="fake"` first)
 - Run (real): set `GROQ_API_KEY` in `.env`, then `streamlit run streamlit_app.py`
-- Test: `pytest -q` (110 tests, offline, ~25 s) · Lint: `ruff check .` (line length 110, py312)
+- Test: `pytest -q` (130 tests, offline, ~25 s) · Lint: `ruff check .` (line length 110, py312)
 - CI runs `ruff check .` then `pytest -q` with `LLM_BACKEND=fake OTEL_SDK_DISABLED=true`
 
 ## Layout
 `streamlit_app.py` UI entry · `analyst/config.py` Settings · `analyst/data/` DataStore + sample data ·
 `analyst/guardrails/` validators, suite, numbers, events · `analyst/tools/` toolkit + artifacts ·
-`analyst/agent/` builder, prompts, runner, fake_model · `analyst/ui/` session + views · `analyst/export/` report builders · `analyst/persistence.py` save/restore · `tests/`.
+`analyst/agent/` builder, prompts, runner, fake_model · `analyst/ui/` session + views · `analyst/export/` report builders · `analyst/persistence.py` save/restore · `analyst/auth/users.py` accounts · `tests/`.
 Knowledge graph of the code: `graphify-out/GRAPH_REPORT.md` (query with `/graphify query "..."`).
 
 ## Non-negotiables
@@ -22,7 +22,8 @@ Knowledge graph of the code: `graphify-out/GRAPH_REPORT.md` (query with `/graphi
   row-capped and time-limited. Never weaken the store to "make a guard pass".
 - No `exec`/`eval` of model-written code. Charts come from the structured `make_chart` tool.
 - Tests run offline using the scripted fake model. Never call a real LLM from tests.
-- Never commit `.env`, API keys or `.sessions/`.
+- Never commit `.env`, API keys, `.sessions/` or `.data/` (user DB).
+- Auth: never store or log plaintext passwords; sign-in errors stay generic; per-user paths come only from validated usernames.
 - Exported HTML must escape model/data text (report builder does); persistence is plain JSON, never pickle.
 - Use Python 3.12 (guardrails-ai does not install on 3.14): `uv venv --python 3.12 .venv`.
 
