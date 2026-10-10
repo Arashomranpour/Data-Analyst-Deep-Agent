@@ -14,6 +14,8 @@
 
 </div>
 
+**🚀 Live demo:** https://data-analyst-deep-agent-cwnrlxt4cllxlxfkhsqfpp.streamlit.app/ (bring your own free Groq key, or try the offline demo model)
+
 ---
 
 ![App screenshot](docs/screenshot.png)
